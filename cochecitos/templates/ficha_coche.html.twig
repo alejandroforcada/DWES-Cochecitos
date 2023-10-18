@@ -1,0 +1,10 @@
+{% extends 'base.html.twig' %}
+{% block title %} Coches {% endblock %}
+{% block body %}
+	 <h1>Ficha del Coche</h1>
+    {% if contacto %}
+         {{include ('partials/datos_coche.html.twig', {'coche': coche})}}
+    {%  else %}
+            <p>Coche no encontrado </p>
+    {% endif %}
+{% endblock %}

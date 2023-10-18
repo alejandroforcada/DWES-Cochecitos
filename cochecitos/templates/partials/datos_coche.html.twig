@@ -1,0 +1,11 @@
+<ul>
+
+    <li><strong>{{ coche.nombre }}</strong></li>
+
+    <li><strong>Escala</strong>: {{ coche.escala }}</li>
+    {% if coche.marca %}
+        <li><strong>Marca: </strong>: {{ coche.marca.nombre }}</li>
+    {% endif %}
+    <li><strong>color</strong>: {{ coche.color }}</li>
+
+</ul>
