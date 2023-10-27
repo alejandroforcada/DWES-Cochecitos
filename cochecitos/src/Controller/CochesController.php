@@ -4,12 +4,26 @@ namespace App\Controller;
 
 
 
-use App\Entity\Coche;
+
+use Symfony\Component\Form\Extension\Core\Type\EmailType;
+use Symfony\Bridge\Doctrine\Form\Type\EntityType;
+use Symfony\Component\Form\Extension\Core\Type\TextType;
+use Symfony\Component\Form\Extension\Core\Type\SubmitType;
 use App\Entity\Marca;
+use App\Entity\Coche;
+use App\Entity\User;
+use App\Form\CocheType;
 use Doctrine\Persistence\ManagerRegistry;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
+use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpFoundation\Session\SessionInterface;
 use Symfony\Component\Routing\Annotation\Route;
+use Symfony\Component\Filesystem\Filesystem;
+use Symfony\Component\HttpFoundation\File\Exception\FileException;
+use Symfony\Component\HttpFoundation\File\UploadedFile;
+use Symfony\Component\Security\Core\Role\Role;
+use Symfony\Component\String\Slugger\SluggerInterface;
 
 class CochesController extends AbstractController
 {
@@ -19,54 +33,92 @@ class CochesController extends AbstractController
         5 => ["nombre" => "Fiat 600D", "escala" => "1/32", "color" => "rojo"],
         7 => ["nombre" => "Porsche 911 Carrera", "escala" => "1/18", "color" => "negro"],
         9 => ["nombre" => "Citroen Xsara Picasso", "escala" => "1/24", "color" => "blanco"]
-    ]; 
-
-    #[Route('/coche/insertar', name:"insertar_coche")]
-    public function insertar (ManagerRegistry $doctrine)
-    {
-        $entityManager=$doctrine->getManager();
-        foreach($this-> coches as $c){
-            $coche= new Coche();
-            $coche-> setNombre($c["nombre"]);
-            $coche-> setEscala($c["escala"]);
-            $coche-> setColor($c["color"]);
-            $entityManager->persist($coche);
-        }
-        try{
-            $entityManager->flush();
-            return new Response ("coches insertados");
-        }
-        catch (\Exception $e){
-            return new Response ("error insertando objetos");
-
-        }
-    }
-    #[Route('/coche/update/{id}/{nombre}', name:"modificar_coche")]
-    public function update(ManagerRegistry $doctrine,$id,$nombre): Response{
-        $entityManager=$doctrine->getManager();
-        $repositorio=$doctrine->getRepository(Coche::class);
-        $coche=$repositorio->find($id);
-        if ($coche){
-            $coche->setNombre($nombre);
-            try
-            {
-                $entityManager->flush();
-                return $this->render('ficha_contacto.html.twig',['coche'=>$coche
+    ];
     
-            ]);
+    #[Route('/coche/nuevo', name:"nuevo_coches")]
+    public function nuevo(ManagerRegistry $doctrine, Request $request){
+        $coche=new Coche();
+
+        $formulario = $this->createForm(ContactoType::class, $coche);
+
+            $formulario->handleRequest($request);
+
+            if($formulario->isSubmitted()&& $formulario->isValid()){
+                $coche=$formulario->getData();
+                $entityManager=$doctrine->getManager();
+                $entityManager->persist($coche);
+                $entityManager->flush();
+                return $this->redirectToRoute('ficha_coche', ["codigo"=>$coche->getId()]);
+
             }
-            catch(\Exception $e){
-                return new Response("error insertando objetos");
+
+        return $this->render('coches/nuevo.html.twig',array(
+            'formulario'=>$formulario->createView()
+        ));
+    }
+    #[Route('/coche/editar/{codigo}', name:"editar_coche", requirements:["codigo"=>"\d+"])]
+    public function editar(ManagerRegistry $doctrine, Request $request, $codigo, SessionInterface $session, SluggerInterface $slugger){
+        $user=$this->getUser();
+
+        if ($user){
+        $repositorio=$doctrine->getRepository(Coche::class);
+        $coche=$repositorio->find($codigo);
+
+        $formulario = $this->createForm(CocheType::class, $coche);
+
+            $formulario->handleRequest($request);
+
+            if($formulario->isSubmitted()&& $formulario->isValid()){
+                $coche=$formulario->getData();
+                $file = $formulario->get('file')->getData();
+                if ($file) {
+                    $originalFilename = pathinfo($file->getClientOriginalName(), PATHINFO_FILENAME);
+                    // this is needed to safely include the file name as part of the URL
+                    $safeFilename = $slugger->slug($originalFilename);
+                    $newFilename = $safeFilename.'-'.uniqid().'.'.$file->guessExtension();
+
+                    // Move the file to the directory where images are stored
+                    try {
+
+                        $file->move(
+                            $this->getParameter('images_directory'), $newFilename
+                        );                      
+                    } catch (FileException $e) {
+                        // ... handle exception if something happens during file upload
+                        return new Response($e->getMessage());
+                    }
+
+                    // updates the 'file$filename' property to store the PDF file name
+                    // instead of its contents
+                    $coche->setFile($newFilename);
+                }
+                $entityManager=$doctrine->getManager();
+                $entityManager->persist($coche);
+                $entityManager->flush();
+               
+
             }
-        }
-        else
-        {
-            return $this->render('ficha_coche.html.twig',['coche'=>null]);
-        }
+            
+
+        return $this->render('coches/nuevo.html.twig',array(
+            'formulario'=>$formulario->createView()
+        ));
+    }
+    else{
+        $url= $this->generateUrl(
+            'editar_coche',['codigo'=>$codigo]
+        );
+        $session->set('enlace', $url);
+        return $this->redirectToRoute('app_login');
+    }
     }
 
     #[Route('/coche/delete/{id}', name:"eliminar_coche")]
-    public function delete(ManagerRegistry $doctrine,$id): Response{
+    public function delete(ManagerRegistry $doctrine,$id, SessionInterface $session): Response{
+        $user=$this->getUser();
+
+
+        if ($user){
         $entityManager=$doctrine->getManager();
         $repositorio=$doctrine->getRepository(Coche::class);
         $coche=$repositorio->find($id);
@@ -83,10 +135,19 @@ class CochesController extends AbstractController
         }
         else
         {
+            
             return $this->render('ficha_coche.html.twig',['coche'=>null]);
         }
     }
 
+        else{
+            $url= $this->generateUrl(
+                'eliminar_coche',['id'=>$id]
+            );
+            $session->set('enlace', $url);
+            return $this->redirectToRoute('app_login');
+        }
+    }
     
     #[Route('/coche/{codigo<\d+>?1}', name:"ficha_coche")]
     
