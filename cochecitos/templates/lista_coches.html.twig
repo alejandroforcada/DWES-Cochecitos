@@ -2,7 +2,7 @@
 {% block title %} Coches {% endblock %}
 {% block body %}
 	 <h1>Ficha del coche</h1>
-    {% if coche %}
+    {% if coches %}
         {% for coche in coches %}
             {{include ('partials/datos_coche.html.twig', {'coche': coche})}}
         {% endfor %}
